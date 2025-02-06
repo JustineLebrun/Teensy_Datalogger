@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+"""
+Created on Thu Jan 16 14:25:47 2025
+
+@author: lebrunjus
+"""
+
+# -*- coding: utf-8 -*-
 
 """ Teensy GUI """
 ##############################################################################
@@ -15,6 +22,7 @@ import matplotlib.figure
 import os
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 import matplotlib.dates as mdates
+from datetime import date, datetime, timedelta
 
 
 ##############################################################################
@@ -71,7 +79,9 @@ def stop():
 
 
 def start():
-    global continue_animation, ani, serCon, ser
+    global continue_animation, ani, serCon, ser, now_start
+    
+    now_start = datetime.now()
     
     if continue_animation:
         continue_animation = False
@@ -81,7 +91,11 @@ def start():
     else:
         continue_animation = True
         try:
-            ser = serial.Serial('COM8', 9600) # CHANGE PORT COM IF NECESSARY
+            # com_port = float(entry_COM.get()) if entry_COM.get() else 7
+            # ser_COM = f"COM{com_port}"
+            # ser = serial.Serial(ser_COM, 9600) # CHANGE PORT COM IF NECESSARY
+            
+            ser = serial.Serial('COM7', 9600)
             serCon = True
                 
         except serial.serialutil.SerialException:
@@ -92,6 +106,8 @@ def start():
 
 # This function is called periodically from FuncAnimation
 def animate(i, x, y):
+    global now_start, now_format
+    
     if serCon:
         try:
             # Read and decode the incoming line from the serial connection
@@ -107,14 +123,20 @@ def animate(i, x, y):
             second = int(parts[5])
             millisecond = int(parts[6])
             
-            # Create a timestamp object
-            timestamp = dt.datetime(year, month, day, hour, minute, second, millisecond * 1000)
+            delta = timedelta(milliseconds = millisecond, seconds=second, minutes=minute, hours=hour, days=day-1)
+            new_time = now_start + delta
+            # # Create a timestamp object
+            # #timestamp = dt.datetime(year, month, day, hour, minute, second, millisecond * 1000)
+            # timestamp = dt.datetime(year, month, day, hour, minute, second)
+            
             
             # Append the timestamp to the time list
-            time.append(timestamp)
+            time.append(new_time)
+            #print(new_time)
             
             # Extract data for each channel (Channel 1 = parts[7], Channel 2 = parts[8], etc.)
-            data_line = parts[7:17]  # Assuming up to 10 channels: parts[7] to parts[16]
+            # data_line = parts[7:17]  # Assuming up to 10 channels: parts[7] to parts[16]
+            data_line = parts[7:17]
             data.append(data_line)
             
             # Update the subplots based on the current checkbox states
@@ -156,10 +178,8 @@ def update_subplots():
 
             
 def save_data_to_file():
-    global filename, now_format, file_save
+    global filename, now_format, file_save, now_start, new_time
     file_save = True
-    now = dt.datetime.now()
-    now_format = now.strftime("%Y__%m__%d__%H__%M") 
 
     # Create the filename with timestamp
     filename = f"{save_dir}/TEENSY_DATALOG_{now_format}.txt"
@@ -168,9 +188,18 @@ def save_data_to_file():
         with open(filename, "w") as file:
             # Write header
             file.write(f"# Teensy acquisition \n")
-            file.write(f"# Date: {now.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            file.write(f"# Date: {now_start.strftime('%Y-%m-%d %H:%M:%S')}\n")
             file.write("# YYYY__MM__DD__HH__MM__SS__Signal Value\n")
             
+            for i, timestamp in enumerate(time):
+                # Format timestamp as string
+                timestamp_str = timestamp.strftime("%Y__%m__%d__%H__%M__%S__")
+                data_str = "__".join(map(str, data[i]))
+                
+                # Write timestamp and data row to file
+                file.write(f"{timestamp_str}{data_str}\n")
+                
+        print(f"Data successfully saved to {filename}")
     except Exception as e:
         print(f"Error while creating file: {e}")
     
@@ -186,6 +215,13 @@ def save_plot():
         save_counter += 1  # Increment the counter for the next save
     except Exception as e:
         print(f"Error while saving the figure: {e}")
+        
+def restart():
+    global time, data
+    time = []
+    data = []
+    fig.clear()
+    canvas.draw()
 
 ##############################################################################
 continue_animation = False
@@ -195,8 +231,12 @@ file_save = False
 time = []
 data = []
 
-now = dt.datetime.now()
-now_file = now.strftime("%Y__%m__%d__%H__%M") 
+now_start = datetime.now()
+now_format = now_start.strftime("%Y__%m__%d__%H__%M") ### Format YYYY__MM__DD__HH__MM__SS__xxxxx
+
+first_second = now_start.second
+
+now_file = now_start.strftime("%Y__%m__%d__%H__%M") 
 save_dir = f"{now_file}_Results"
 os.makedirs(save_dir, exist_ok=True)
     
@@ -231,16 +271,25 @@ toolbar.pack(side=tk.BOTTOM, fill=tk.X)
 exit_button = ttk.Button(frame_exit, text="Exit", command=close)
 exit_button.pack()
 
-start_button = ttk.Button(frame_dashboard, text="START ACQUISITION", command=start)
+# label_COM = tk.Label(text="COM Port",master=frame_dashboard)
+# label_COM.pack()
+# entry_COM = tk.Entry(master=frame_dashboard, font = ("Arial",12))
+# entry_COM.pack()
+# entry_COM.insert(0, str(7))
+
+start_button = ttk.Button(frame_dashboard, text="START", command=start)
 start_button.pack()
 
-stop_button = ttk.Button(frame_dashboard, text="STOP ANIMATION", command=stop)
+stop_button = ttk.Button(frame_dashboard, text="STOP", command=stop)
 stop_button.pack()
+
+restart_button = ttk.Button(frame_dashboard, text="RESTART", command=restart)
+restart_button.pack()
 
 save_button = ttk.Button(frame_dashboard, text="SAVE current figure", command=save_plot)
 save_button.pack()
 
-save_txt_button = ttk.Button(frame_dashboard, text="Start saving data to file", command=save_data_to_file)
+save_txt_button = ttk.Button(frame_dashboard, text="Data to file", command=save_data_to_file)
 save_txt_button.pack()
 
 ### Channels selection
